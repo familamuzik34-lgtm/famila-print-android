@@ -6,6 +6,7 @@ import android.app.Activity
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothSocket
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
@@ -68,6 +69,11 @@ class MainActivity : Activity() {
 
         readIncomingIntent(intent)
         ensureBluetoothPermissionAndLoad()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::printerSpinner.isInitialized) ensureBluetoothPermissionAndLoad()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -223,18 +229,40 @@ class MainActivity : Activity() {
         product: String,
         barcode: String
     ) {
-        val socket = device.createRfcommSocketToServiceRecord(sppUuid)
-        try {
-            socket.connect()
-            val command = buildTspl(widthMm, heightMm, count, brand, product, barcode)
-            val charset = Charset.forName("windows-1254")
-            socket.outputStream.use { out ->
-                out.write(command.toByteArray(charset))
-                out.flush()
+        bluetoothAdapter?.cancelDiscovery()
+        val command = buildTspl(widthMm, heightMm, count, brand, product, barcode)
+        val charset = Charset.forName("windows-1254")
+        val bytes = command.toByteArray(charset)
+
+        var lastError: Exception? = null
+        val attempts = listOf<(BluetoothDevice) -> BluetoothSocket>(
+            { d -> d.createInsecureRfcommSocketToServiceRecord(sppUuid) },
+            { d -> d.createRfcommSocketToServiceRecord(sppUuid) },
+            { d ->
+                val method = d.javaClass.getMethod("createRfcommSocket", Int::class.javaPrimitiveType)
+                method.invoke(d, 1) as BluetoothSocket
             }
-        } finally {
-            try { socket.close() } catch (_: Exception) {}
+        )
+
+        for ((index, factory) in attempts.withIndex()) {
+            var socket: BluetoothSocket? = null
+            try {
+                socket = factory(device)
+                socket.connect()
+                Thread.sleep(250)
+                val out = socket.outputStream
+                out.write(bytes)
+                out.flush()
+                Thread.sleep(350)
+                return
+            } catch (e: Exception) {
+                lastError = e
+            } finally {
+                try { socket?.close() } catch (_: Exception) {}
+            }
         }
+
+        throw Exception("Bluetooth bağlantısı kurulamadı. ${lastError?.message ?: "SPP kanal hatası"}")
     }
 
     private fun buildTspl(
