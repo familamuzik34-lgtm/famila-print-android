@@ -24,7 +24,9 @@ import java.util.UUID
 
 class MainActivity : Activity() {
     private lateinit var printerSpinner: Spinner
+    private lateinit var typeInput: EditText
     private lateinit var brandInput: EditText
+    private lateinit var colorInput: EditText
     private lateinit var productInput: EditText
     private lateinit var barcodeInput: EditText
     private lateinit var widthInput: EditText
@@ -32,158 +34,50 @@ class MainActivity : Activity() {
     private lateinit var countInput: EditText
     private lateinit var printButton: Button
     private lateinit var statusText: TextView
-
     private val printers = mutableListOf<BluetoothDevice>()
-    private val sppUuid: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
+    private val sppUuid = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
     private val prefs by lazy { getSharedPreferences("famila_print", MODE_PRIVATE) }
-    private val bluetoothAdapter: BluetoothAdapter? by lazy {
-        val manager = getSystemService(BLUETOOTH_SERVICE) as BluetoothManager
-        manager.adapter
-    }
+    private val bluetoothAdapter: BluetoothAdapter? by lazy { (getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
-        printerSpinner = findViewById(R.id.printerSpinner)
-        brandInput = findViewById(R.id.brandInput)
-        productInput = findViewById(R.id.productInput)
-        barcodeInput = findViewById(R.id.barcodeInput)
-        widthInput = findViewById(R.id.widthInput)
-        heightInput = findViewById(R.id.heightInput)
-        countInput = findViewById(R.id.countInput)
-        printButton = findViewById(R.id.printButton)
-        statusText = findViewById(R.id.statusText)
-        widthInput.setText(prefs.getString("width", "40"))
-        heightInput.setText(prefs.getString("height", "30"))
-        countInput.setText(prefs.getString("count", "1"))
+        super.onCreate(savedInstanceState); setContentView(R.layout.activity_main)
+        printerSpinner=findViewById(R.id.printerSpinner); typeInput=findViewById(R.id.typeInput); brandInput=findViewById(R.id.brandInput); colorInput=findViewById(R.id.colorInput); productInput=findViewById(R.id.productInput); barcodeInput=findViewById(R.id.barcodeInput); widthInput=findViewById(R.id.widthInput); heightInput=findViewById(R.id.heightInput); countInput=findViewById(R.id.countInput); printButton=findViewById(R.id.printButton); statusText=findViewById(R.id.statusText)
+        widthInput.setText(prefs.getString("width","40")); heightInput.setText(prefs.getString("height","30")); countInput.setText(prefs.getString("count","1"))
         findViewById<Button>(R.id.openBluetoothButton).setOnClickListener { startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }
-        printButton.setOnClickListener { printLabel() }
-        readIncomingIntent(intent)
-        ensureBluetoothPermissionAndLoad()
+        printButton.setOnClickListener { printLabel() }; readIncomingIntent(intent); ensureBluetoothPermissionAndLoad()
+    }
+    override fun onResume(){ super.onResume(); if(::printerSpinner.isInitialized) ensureBluetoothPermissionAndLoad() }
+    override fun onNewIntent(intent:Intent){ super.onNewIntent(intent); setIntent(intent); readIncomingIntent(intent) }
+
+    private fun readIncomingIntent(intent:Intent?){ val u=intent?.data?:return; if(u.scheme!="famila-print")return; u.getQueryParameter("type")?.let{typeInput.setText(it)}; u.getQueryParameter("brand")?.let{brandInput.setText(it)}; u.getQueryParameter("color")?.let{colorInput.setText(it)}; u.getQueryParameter("name")?.let{productInput.setText(it)}; u.getQueryParameter("barcode")?.let{barcodeInput.setText(it)}; u.getQueryParameter("width")?.let{widthInput.setText(it)}; u.getQueryParameter("height")?.let{heightInput.setText(it)}; u.getQueryParameter("count")?.let{countInput.setText(it)} }
+    private fun hasBluetoothPermissions()= Build.VERSION.SDK_INT<Build.VERSION_CODES.S || (checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT)==PackageManager.PERMISSION_GRANTED && checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN)==PackageManager.PERMISSION_GRANTED)
+    private fun requestBluetoothPermissions(){ if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.S) requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT,Manifest.permission.BLUETOOTH_SCAN),1001) }
+    private fun ensureBluetoothPermissionAndLoad(){ if(!hasBluetoothPermissions()){requestBluetoothPermissions();return}; loadPairedPrinters() }
+    override fun onRequestPermissionsResult(r:Int,p:Array<out String>,g:IntArray){ super.onRequestPermissionsResult(r,p,g); if(r==1001){if(hasBluetoothPermissions())loadPairedPrinters() else setStatus("Yakındaki cihazlar izni gerekli.")} }
+
+    @SuppressLint("MissingPermission") private fun loadPairedPrinters(){ val a=bluetoothAdapter?:run{setStatus("Bu telefonda Bluetooth bulunamadı.");return}; if(!a.isEnabled){setStatus("Bluetooth kapalı.");return}; printers.clear(); printers.addAll(a.bondedDevices.sortedBy{it.name?:it.address}); if(printers.isEmpty()){printerSpinner.adapter=ArrayAdapter(this,android.R.layout.simple_spinner_dropdown_item,listOf("Eşleşmiş yazıcı yok"));return}; printerSpinner.adapter=ArrayAdapter(this,android.R.layout.simple_spinner_dropdown_item,printers.map{"${it.name?:"Bluetooth cihazı"}  •  ${it.address}"}); val i=printers.indexOfFirst{it.address==prefs.getString("printer_mac",null)}; if(i>=0)printerSpinner.setSelection(i); setStatus("${printers.size} eşleşmiş Bluetooth cihazı bulundu.") }
+
+    private fun printLabel(){
+        if(!hasBluetoothPermissions()){requestBluetoothPermissions();return}; if(printers.isEmpty()){Toast.makeText(this,"Önce yazıcıyı eşleştirin.",Toast.LENGTH_LONG).show();return}
+        val w=widthInput.text.toString().replace(',','.').toDoubleOrNull(); val h=heightInput.text.toString().replace(',','.').toDoubleOrNull(); val c=countInput.text.toString().toIntOrNull(); val type=typeInput.text.toString().trim(); val brand=brandInput.text.toString().trim(); val color=colorInput.text.toString().trim(); val product=productInput.text.toString().trim(); val barcode=barcodeInput.text.toString().trim()
+        if(w==null||w !in 10.0..80.0){widthInput.error="10–80 mm";return}; if(h==null||h !in 10.0..80.0){heightInput.error="10–80 mm";return}; if(c==null||c !in 1..100){countInput.error="1–100";return}; if(barcode.isBlank()){barcodeInput.error="Barkod zorunlu";return}
+        val d=printers[printerSpinner.selectedItemPosition.coerceIn(0,printers.lastIndex)]; prefs.edit().putString("width",fmt(w)).putString("height",fmt(h)).putString("count",c.toString()).putString("printer_mac",d.address).apply(); printButton.isEnabled=false;setStatus("${d.name?:"Yazıcı"} cihazına bağlanılıyor…")
+        Thread{try{sendTspl(d,w,h,c,type,brand,color,product,barcode);runOnUiThread{printButton.isEnabled=true;setStatus("✅ $c etiket yazıcıya gönderildi.")}}catch(e:Exception){runOnUiThread{printButton.isEnabled=true;setStatus("❌ Yazdırma başarısız: ${e.message}")}}}.start()
     }
 
-    override fun onResume() { super.onResume(); if (::printerSpinner.isInitialized) ensureBluetoothPermissionAndLoad() }
-    override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); setIntent(intent); readIncomingIntent(intent) }
+    @SuppressLint("MissingPermission") private fun sendTspl(d:BluetoothDevice,w:Double,h:Double,c:Int,type:String,brand:String,color:String,product:String,barcode:String){ val bytes=buildTspl(w,h,c,type,brand,color,product,barcode).toByteArray(Charset.forName("windows-1254")); var last:Exception?=null; val tries=listOf<(BluetoothDevice)->BluetoothSocket>({it.createInsecureRfcommSocketToServiceRecord(sppUuid)},{it.createRfcommSocketToServiceRecord(sppUuid)},{x->x.javaClass.getMethod("createRfcommSocket",Int::class.javaPrimitiveType).invoke(x,1) as BluetoothSocket}); for(f in tries){var s:BluetoothSocket?=null;try{s=f(d);s.connect();Thread.sleep(200);s.outputStream.apply{write(bytes);flush()};Thread.sleep(300);return}catch(e:Exception){last=e}finally{try{s?.close()}catch(_:Exception){}}};throw Exception(last?.message?:"SPP kanal hatası") }
 
-    private fun readIncomingIntent(intent: Intent?) {
-        val uri = intent?.data ?: return
-        if (uri.scheme != "famila-print") return
-        uri.getQueryParameter("brand")?.let { brandInput.setText(it) }
-        uri.getQueryParameter("name")?.let { productInput.setText(it) }
-        uri.getQueryParameter("barcode")?.let { barcodeInput.setText(it) }
-        uri.getQueryParameter("width")?.let { widthInput.setText(it) }
-        uri.getQueryParameter("height")?.let { heightInput.setText(it) }
-        uri.getQueryParameter("count")?.let { countInput.setText(it) }
-    }
-
-    private fun hasBluetoothPermissions(): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
-        return checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED &&
-            checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED
-    }
-
-    private fun requestBluetoothPermissions() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN), 1001)
+    private fun buildTspl(w:Double,h:Double,count:Int,type:String,brand:String,color:String,product:String,barcode:String):String{
+        fun safe(v:String)=v.replace("\"","'").replace("\r"," ").replace("\n"," ").take(38)
+        val sb=StringBuilder("SIZE ${fmt(w)} mm,${fmt(h)} mm\r\nGAP 2 mm,0 mm\r\nDIRECTION 1\r\nREFERENCE 0,0\r\nCLS\r\nCODEPAGE 1254\r\n")
+        // Adaptive priority: barcode always; product type whenever practical; model/details disappear as label shrinks.
+        when {
+            h < 15 || w < 32 -> { if(type.isNotBlank()) sb.append("TEXT 8,3,\"2\",0,1,1,\"${safe(type)}\"\r\n"); sb.append("BARCODE 8,23,\"128\",42,1,0,1,2,\"${safe(barcode)}\"\r\n") }
+            h < 24 || w < 38 -> { if(type.isNotBlank()) sb.append("TEXT 10,4,\"2\",0,1,1,\"${safe(type)}\"\r\n"); if(brand.isNotBlank()) sb.append("TEXT 10,27,\"1\",0,1,1,\"${safe(brand)}\"\r\n"); sb.append("BARCODE 10,48,\"128\",58,1,0,1,2,\"${safe(barcode)}\"\r\n") }
+            else -> { if(type.isNotBlank()) sb.append("TEXT 14,7,\"3\",0,1,1,\"${safe(type)}\"\r\n"); if(brand.isNotBlank()) sb.append("TEXT 14,38,\"2\",0,1,1,\"${safe(brand)}\"\r\n"); val detail=listOf(color,product).filter{it.isNotBlank()}.joinToString(" • "); if(detail.isNotBlank())sb.append("TEXT 14,63,\"1\",0,1,1,\"${safe(detail)}\"\r\n"); val bh=((h*8).toInt()-104).coerceIn(55,92); sb.append("BARCODE 14,88,\"128\",$bh,1,0,2,2,\"${safe(barcode)}\"\r\n") }
         }
+        sb.append("PRINT $count,1\r\n");return sb.toString()
     }
-
-    private fun ensureBluetoothPermissionAndLoad() {
-        if (!hasBluetoothPermissions()) {
-            requestBluetoothPermissions()
-            return
-        }
-        loadPairedPrinters()
-    }
-
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == 1001) {
-            if (hasBluetoothPermissions()) loadPairedPrinters()
-            else setStatus("Yakındaki cihazlar izni verilmedi. Ayarlar > Uygulamalar > FaMiLa Print > İzinler bölümünden Yakındaki cihazlar iznini açın.")
-        }
-    }
-
-    @SuppressLint("MissingPermission")
-    private fun loadPairedPrinters() {
-        val adapter = bluetoothAdapter ?: run { setStatus("Bu telefonda Bluetooth bulunamadı."); return }
-        if (!adapter.isEnabled) { setStatus("Bluetooth kapalı. Önce Bluetooth'u açın."); return }
-        printers.clear(); printers.addAll(adapter.bondedDevices.sortedBy { it.name ?: it.address })
-        if (printers.isEmpty()) {
-            printerSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, listOf("Eşleşmiş yazıcı yok"))
-            setStatus("XP-P328B'yi önce Android Bluetooth ayarlarından eşleştirin."); return
-        }
-        val labels = printers.map { "${it.name?.takeIf { n -> n.isNotBlank() } ?: "Bluetooth cihazı"}  •  ${it.address}" }
-        printerSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, labels)
-        val savedMac = prefs.getString("printer_mac", null)
-        val savedIndex = printers.indexOfFirst { it.address == savedMac }
-        if (savedIndex >= 0) printerSpinner.setSelection(savedIndex)
-        setStatus("${printers.size} eşleşmiş Bluetooth cihazı bulundu. XP-P328B'yi seçin.")
-    }
-
-    private fun printLabel() {
-        if (!hasBluetoothPermissions()) { requestBluetoothPermissions(); return }
-        if (printers.isEmpty()) { Toast.makeText(this, "Önce XP-P328B'yi Bluetooth ile eşleştirin.", Toast.LENGTH_LONG).show(); return }
-        val width = widthInput.text.toString().replace(',', '.').toDoubleOrNull()
-        val height = heightInput.text.toString().replace(',', '.').toDoubleOrNull()
-        val count = countInput.text.toString().toIntOrNull()
-        val brand = brandInput.text.toString().trim(); val product = productInput.text.toString().trim(); val barcode = barcodeInput.text.toString().trim()
-        if (width == null || width !in 10.0..80.0) { widthInput.error = "10–80 mm arasında bir genişlik girin"; return }
-        if (height == null || height !in 10.0..80.0) { heightInput.error = "10–80 mm arasında bir yükseklik girin"; return }
-        if (count == null || count !in 1..100) { countInput.error = "1–100 arasında adet girin"; return }
-        if (barcode.isBlank()) { barcodeInput.error = "Barkod boş olamaz"; return }
-        val device = printers[printerSpinner.selectedItemPosition.coerceIn(0, printers.lastIndex)]
-        prefs.edit().putString("width", width.toString().removeSuffix(".0")).putString("height", height.toString().removeSuffix(".0")).putString("count", count.toString()).putString("printer_mac", device.address).apply()
-        printButton.isEnabled = false; setStatus("${device.name ?: "Yazıcı"} cihazına bağlanılıyor…")
-        Thread {
-            try {
-                sendTspl(device, width, height, count, brand, product, barcode)
-                runOnUiThread { printButton.isEnabled = true; setStatus("✅ $count etiket yazıcıya gönderildi."); Toast.makeText(this, "Etiket gönderildi", Toast.LENGTH_SHORT).show() }
-            } catch (e: Exception) {
-                runOnUiThread { printButton.isEnabled = true; setStatus("❌ Yazdırma başarısız: ${e.message ?: e.javaClass.simpleName}") }
-            }
-        }.start()
-    }
-
-    @SuppressLint("MissingPermission")
-    private fun sendTspl(device: BluetoothDevice, widthMm: Double, heightMm: Double, count: Int, brand: String, product: String, barcode: String) {
-        val command = buildTspl(widthMm, heightMm, count, brand, product, barcode)
-        val bytes = command.toByteArray(Charset.forName("windows-1254"))
-        var lastError: Exception? = null
-        val attempts = listOf<(BluetoothDevice) -> BluetoothSocket>(
-            { d -> d.createInsecureRfcommSocketToServiceRecord(sppUuid) },
-            { d -> d.createRfcommSocketToServiceRecord(sppUuid) },
-            { d -> val method = d.javaClass.getMethod("createRfcommSocket", Int::class.javaPrimitiveType); method.invoke(d, 1) as BluetoothSocket }
-        )
-        for (factory in attempts) {
-            var socket: BluetoothSocket? = null
-            try {
-                socket = factory(device); socket.connect(); Thread.sleep(250)
-                socket.outputStream.apply { write(bytes); flush() }; Thread.sleep(350); return
-            } catch (e: Exception) { lastError = e } finally { try { socket?.close() } catch (_: Exception) {} }
-        }
-        throw Exception("Bluetooth bağlantısı kurulamadı. ${lastError?.message ?: "SPP kanal hatası"}")
-    }
-
-    private fun buildTspl(widthMm: Double, heightMm: Double, count: Int, brand: String, product: String, barcode: String): String {
-        val dotsPerMm = 8; val hDots = (heightMm * dotsPerMm).toInt(); val compact = heightMm < 20
-        fun safe(value: String) = value.replace("\"", "'").replace("\r", " ").replace("\n", " ").take(42)
-        val sb = StringBuilder()
-        sb.append("SIZE ${fmt(widthMm)} mm,${fmt(heightMm)} mm\r\nGAP 2 mm,0 mm\r\nDIRECTION 1\r\nREFERENCE 0,0\r\nCLS\r\nCODEPAGE 1254\r\n")
-        if (compact) {
-            val title = listOf(brand, product).filter { it.isNotBlank() }.joinToString(" ")
-            if (title.isNotBlank()) sb.append("TEXT 12,4,\"2\",0,1,1,\"${safe(title)}\"\r\n")
-            val barcodeY = 26; val barcodeHeight = (hDots - barcodeY - 18).coerceIn(34, 62)
-            sb.append("BARCODE 12,$barcodeY,\"128\",$barcodeHeight,1,0,2,2,\"${safe(barcode)}\"\r\n")
-        } else {
-            if (brand.isNotBlank()) sb.append("TEXT 16,10,\"3\",0,1,1,\"${safe(brand)}\"\r\n")
-            if (product.isNotBlank()) sb.append("TEXT 16,38,\"2\",0,1,1,\"${safe(product)}\"\r\n")
-            val barcodeY = 70; val barcodeHeight = (hDots - barcodeY - 28).coerceIn(55, 105)
-            sb.append("BARCODE 16,$barcodeY,\"128\",$barcodeHeight,1,0,2,2,\"${safe(barcode)}\"\r\n")
-        }
-        sb.append("PRINT $count,1\r\n"); return sb.toString()
-    }
-
-    private fun fmt(value: Double): String = if (value % 1.0 == 0.0) value.toInt().toString() else "%.1f".format(java.util.Locale.US, value)
-    private fun setStatus(text: String) { statusText.text = text; statusText.visibility = View.VISIBLE }
+    private fun fmt(v:Double)=if(v%1.0==0.0)v.toInt().toString() else "%.1f".format(java.util.Locale.US,v)
+    private fun setStatus(t:String){statusText.text=t;statusText.visibility=View.VISIBLE}
 }
