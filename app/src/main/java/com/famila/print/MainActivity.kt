@@ -95,13 +95,20 @@ class MainActivity : Activity() {
     }
 
     private fun ensureBluetoothPermissionAndLoad() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-            checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED
-        ) {
-            requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), 1001)
-        } else {
-            loadPairedPrinters()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val missing = mutableListOf<String>()
+            if (checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+                missing.add(Manifest.permission.BLUETOOTH_CONNECT)
+            }
+            if (checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN) != PackageManager.PERMISSION_GRANTED) {
+                missing.add(Manifest.permission.BLUETOOTH_SCAN)
+            }
+            if (missing.isNotEmpty()) {
+                requestPermissions(missing.toTypedArray(), 1001)
+                return
+            }
         }
+        loadPairedPrinters()
     }
 
     override fun onRequestPermissionsResult(
@@ -110,10 +117,13 @@ class MainActivity : Activity() {
         grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == 1001 && grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
-            loadPairedPrinters()
-        } else if (requestCode == 1001) {
-            setStatus("Bluetooth izni verilmedi. Yazıcıya bağlanabilmek için izin gerekli.")
+        if (requestCode == 1001) {
+            val allGranted = grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }
+            if (allGranted) {
+                loadPairedPrinters()
+            } else {
+                setStatus("Bluetooth izinleri verilmedi. Yazıcıya bağlanabilmek için izin gerekli.")
+            }
         }
     }
 
@@ -229,7 +239,12 @@ class MainActivity : Activity() {
         product: String,
         barcode: String
     ) {
-        bluetoothAdapter?.cancelDiscovery()
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+            checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED
+        ) {
+            bluetoothAdapter?.cancelDiscovery()
+        }
+
         val command = buildTspl(widthMm, heightMm, count, brand, product, barcode)
         val charset = Charset.forName("windows-1254")
         val bytes = command.toByteArray(charset)
@@ -244,7 +259,7 @@ class MainActivity : Activity() {
             }
         )
 
-        for ((index, factory) in attempts.withIndex()) {
+        for (factory in attempts) {
             var socket: BluetoothSocket? = null
             try {
                 socket = factory(device)
