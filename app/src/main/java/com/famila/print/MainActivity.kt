@@ -38,6 +38,7 @@ class MainActivity : Activity() {
     private val sppUuid = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
     private val prefs by lazy { getSharedPreferences("famila_print", MODE_PRIVATE) }
     private val bluetoothAdapter: BluetoothAdapter? by lazy { (getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter }
+    private val initialLastEan = "2906620431713"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -57,6 +58,7 @@ class MainActivity : Activity() {
         heightInput.setText(prefs.getString("height", "30"))
         countInput.setText(prefs.getString("count", "1"))
         findViewById<Button>(R.id.openBluetoothButton).setOnClickListener { startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }
+        findViewById<Button>(R.id.generateBarcodeButton).setOnClickListener { generateNextEan13() }
         printButton.setOnClickListener { printLabel() }
         readIncomingIntent(intent)
         ensureBluetoothPermissionAndLoad()
@@ -76,6 +78,24 @@ class MainActivity : Activity() {
         u.getQueryParameter("width")?.let { widthInput.setText(it) }
         u.getQueryParameter("height")?.let { heightInput.setText(it) }
         u.getQueryParameter("count")?.let { countInput.setText(it) }
+    }
+
+    private fun generateNextEan13() {
+        val last = prefs.getString("last_ean13", initialLastEan) ?: initialLastEan
+        val payload = last.take(12).toLongOrNull() ?: initialLastEan.take(12).toLong()
+        val nextPayload = (payload + 1).toString().padStart(12, '0')
+        val check = ean13CheckDigit(nextPayload)
+        val next = nextPayload + check
+        barcodeInput.setText(next)
+        prefs.edit().putString("last_ean13", next).apply()
+        setStatus("✅ Yeni EAN-13 oluşturuldu: $next")
+    }
+
+    private fun ean13CheckDigit(first12: String): Int {
+        val digits = first12.map { it.digitToInt() }
+        var sum = 0
+        digits.forEachIndexed { index, digit -> sum += if (index % 2 == 0) digit else digit * 3 }
+        return (10 - (sum % 10)) % 10
     }
 
     private fun hasBluetoothPermissions(): Boolean {
