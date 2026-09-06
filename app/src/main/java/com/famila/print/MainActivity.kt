@@ -76,9 +76,21 @@ class MainActivity : Activity() {
         uri.getQueryParameter("count")?.let { countInput.setText(it) }
     }
 
+    private fun hasBluetoothPermissions(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
+        return checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED &&
+            checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun requestBluetoothPermissions() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN), 1001)
+        }
+    }
+
     private fun ensureBluetoothPermissionAndLoad() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), 1001)
+        if (!hasBluetoothPermissions()) {
+            requestBluetoothPermissions()
             return
         }
         loadPairedPrinters()
@@ -87,8 +99,8 @@ class MainActivity : Activity() {
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == 1001) {
-            if (grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) loadPairedPrinters()
-            else setStatus("Yakındaki cihazlar izni verilmedi. Yazıcıya bağlanmak için bu izin gerekli.")
+            if (hasBluetoothPermissions()) loadPairedPrinters()
+            else setStatus("Yakındaki cihazlar izni verilmedi. Ayarlar > Uygulamalar > FaMiLa Print > İzinler bölümünden Yakındaki cihazlar iznini açın.")
         }
     }
 
@@ -110,9 +122,7 @@ class MainActivity : Activity() {
     }
 
     private fun printLabel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), 1001); return
-        }
+        if (!hasBluetoothPermissions()) { requestBluetoothPermissions(); return }
         if (printers.isEmpty()) { Toast.makeText(this, "Önce XP-P328B'yi Bluetooth ile eşleştirin.", Toast.LENGTH_LONG).show(); return }
         val width = widthInput.text.toString().replace(',', '.').toDoubleOrNull()
         val height = heightInput.text.toString().replace(',', '.').toDoubleOrNull()
