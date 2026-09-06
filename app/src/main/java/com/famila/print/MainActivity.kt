@@ -194,15 +194,15 @@ class MainActivity : Activity() {
             h < 24 || w < 38 -> {
                 if (type.isNotBlank()) sb.append("TEXT 10,4,\"2\",0,1,1,\"${safe(type)}\"\r\n")
                 if (brand.isNotBlank()) sb.append("TEXT 10,27,\"1\",0,1,1,\"${safe(brand)}\"\r\n")
-                sb.append("BARCODE 10,48,\"128\",58,1,0,1,2,\"${safe(barcode)}\"\r\n")
+                sb.append("BARCODE 10,48,\"128\",54,1,0,1,2,\"${safe(barcode)}\"\r\n")
             }
             else -> {
-                if (type.isNotBlank()) sb.append("TEXT 14,7,\"3\",0,1,1,\"${safe(type)}\"\r\n")
-                if (brand.isNotBlank()) sb.append("TEXT 14,38,\"2\",0,1,1,\"${safe(brand)}\"\r\n")
+                if (type.isNotBlank()) sb.append("TEXT 14,6,\"2\",0,1,1,\"${safe(type)}\"\r\n")
+                if (brand.isNotBlank()) sb.append("TEXT 14,31,\"2\",0,1,1,\"${safe(brand)}\"\r\n")
                 val detail = listOf(color, product).filter { it.isNotBlank() }.joinToString(" ")
-                if (detail.isNotBlank()) sb.append("TEXT 14,63,\"1\",0,1,1,\"${safe(detail)}\"\r\n")
-                val bh = ((h * 8).toInt() - 104).coerceIn(55, 92)
-                sb.append("BARCODE 14,88,\"128\",$bh,1,0,2,2,\"${safe(barcode)}\"\r\n")
+                if (detail.isNotBlank()) sb.append("TEXT 14,56,\"1\",0,1,1,\"${safe(detail)}\"\r\n")
+                val bh = ((h * 8).toInt() - 122).coerceIn(52, 68)
+                sb.append("BARCODE 14,78,\"128\",$bh,1,0,2,2,\"${safe(barcode)}\"\r\n")
             }
         }
         sb.append("PRINT $count,1\r\n")
